@@ -31,10 +31,8 @@ Example output format:
 ${JSON.stringify(items.map(item => ({ id: item.id, name: item.name })), null, 2)}`
 
   const models = [
-    'google/gemma-2-9b-it:free',
-    'meta-llama/llama-3-8b-instruct:free',
-    'qwen/qwen-2.5-7b-instruct:free',
-    'meta-llama/llama-3.1-8b-instruct:free'
+    'meta-llama/llama-3.1-8b-instruct',
+    'openrouter/auto'
   ]
 
   let lastError: any = null
@@ -82,4 +80,3 @@ ${JSON.stringify(items.map(item => ({ id: item.id, name: item.name })), null, 2)
   // If we exhausted all models, throw the last error
   throw lastError || new Error('All categorization models failed.')
 }
-
