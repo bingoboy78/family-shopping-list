@@ -3,6 +3,7 @@ import { Plus, Check, Trash2, ChevronDown, ShoppingCart, Users, LogOut, Mic, Ref
 import { motion, AnimatePresence } from 'framer-motion'
 import { supabase } from './supabase'
 import { useSpeechInput, VOICE_LANGUAGES } from './useSpeechInput'
+import { categorizeItems } from './categorize'
 
 // ───── Types ─────
 interface ShoppingItem {
@@ -17,6 +18,7 @@ interface ShoppingItem {
 
 // ───── Constants ─────
 const CATEGORIES: { name: string; emoji: string }[] = [
+  { name: 'Uncategorized', emoji: '📋' },
   { name: 'Fruits & Veggies', emoji: '🥬' },
   { name: 'Dairy & Eggs', emoji: '🥛' },
   { name: 'Meat & Fish', emoji: '🥩' },
@@ -59,6 +61,7 @@ export default function App() {
   const [isJoined, setIsJoined] = useState(() => !!loadFromStorage<string>(STORAGE_KEY_CODE, ''))
   const [isConnected, setIsConnected] = useState(false)
   const [isRefreshing, setIsRefreshing] = useState(false)
+  const [isCategorizing, setIsCategorizing] = useState(false)
   const [errorHeader, setErrorHeader] = useState<string | null>(null)
   const subscriptionRef = useRef<any>(null)
 
@@ -240,6 +243,49 @@ export default function App() {
     }
   }, [])
 
+  const handleCategorize = useCallback(async () => {
+    const uncategorizedItems = items.filter(i => !i.is_bought && i.category === 'Uncategorized')
+    if (uncategorizedItems.length === 0) return
+
+    setIsCategorizing(true)
+    setErrorHeader(null)
+    try {
+      const categoryMap = await categorizeItems(
+        uncategorizedItems.map(i => ({ id: i.id, name: i.name })),
+        CATEGORIES.map(c => c.name)
+      )
+
+      const validCategoryNames = CATEGORIES.map(c => c.name)
+      const updates: { id: string; category: string }[] = []
+
+      const updatedItems = items.map(item => {
+        const assignedCat = categoryMap[item.id]
+        if (assignedCat && validCategoryNames.includes(assignedCat) && assignedCat !== 'Uncategorized') {
+          updates.push({ id: item.id, category: assignedCat })
+          return { ...item, category: assignedCat }
+        }
+        return item
+      })
+
+      // Optimistic state update
+      setItems(updatedItems)
+
+      // Update database
+      if (updates.length > 0) {
+        await Promise.all(
+          updates.map(u => 
+            supabase.from('items').update({ category: u.category }).eq('id', u.id)
+          )
+        )
+      }
+    } catch (err: any) {
+      console.error(err)
+      setErrorHeader('Categorization failed: ' + (err.message || 'Unknown error'))
+    } finally {
+      setIsCategorizing(false)
+    }
+  }, [items])
+
   // ── Derived state ──
   const activeItems = items.filter(i => !i.is_bought)
   const boughtItems = items.filter(i => i.is_bought)
@@ -353,6 +399,32 @@ export default function App() {
         <div className="error-banner">
           <WifiOff size={14} /> {errorHeader}
         </div>
+      )}
+
+      {items.some(i => !i.is_bought && i.category === 'Uncategorized') && (
+        <motion.div 
+          className="categorize-banner"
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -10 }}
+        >
+          <div className="categorize-banner-text">
+            <span>🪄 AI can categorize your items</span>
+          </div>
+          <button 
+            className={`btn-categorize ${isCategorizing ? 'loading' : ''}`}
+            onClick={handleCategorize}
+            disabled={isCategorizing}
+          >
+            {isCategorizing ? (
+              <>
+                <span className="spinner"></span> Sorting...
+              </>
+            ) : (
+              'Categorize'
+            )}
+          </button>
+        </motion.div>
       )}
 
       {/* Active Items by Category */}
