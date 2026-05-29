@@ -30,40 +30,56 @@ Example output format:
   const userPrompt = `Categorize the following items:
 ${JSON.stringify(items.map(item => ({ id: item.id, name: item.name })), null, 2)}`
 
-  try {
-    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
-        'HTTP-Referer': window.location.origin, // Required by OpenRouter
-        'X-Title': 'Family Shopping App', // Optional, for OpenRouter analytics
-      },
-      body: JSON.stringify({
-        model: 'meta-llama/llama-3.1-8b-instruct:free',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt }
-        ],
-        response_format: { type: 'json_object' }
+  const models = [
+    'google/gemma-2-9b-it:free',
+    'meta-llama/llama-3-8b-instruct:free',
+    'qwen/qwen-2.5-7b-instruct:free',
+    'meta-llama/llama-3.1-8b-instruct:free'
+  ]
+
+  let lastError: any = null
+
+  for (const model of models) {
+    try {
+      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+          'HTTP-Referer': window.location.origin, // Required by OpenRouter
+          'X-Title': 'Family Shopping App', // Optional, for OpenRouter analytics
+        },
+        body: JSON.stringify({
+          model: model,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt }
+          ],
+          response_format: { type: 'json_object' }
+        })
       })
-    })
 
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}))
-      throw new Error(errorData.error?.message || `HTTP error! Status: ${response.status}`)
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.error?.message || `HTTP error! Status: ${response.status}`)
+      }
+
+      const data = await response.json()
+      const content = data.choices?.[0]?.message?.content
+      if (!content) {
+        throw new Error('Empty response from AI model.')
+      }
+
+      const result = JSON.parse(content) as Record<string, string>
+      return result
+    } catch (error: any) {
+      console.warn(`Failed with model ${model}:`, error.message || error)
+      lastError = error
+      // Continue to next model in loop
     }
-
-    const data = await response.json()
-    const content = data.choices?.[0]?.message?.content
-    if (!content) {
-      throw new Error('Empty response from AI model.')
-    }
-
-    const result = JSON.parse(content) as Record<string, string>
-    return result
-  } catch (error) {
-    console.error('AI Categorization error:', error)
-    throw error
   }
+
+  // If we exhausted all models, throw the last error
+  throw lastError || new Error('All categorization models failed.')
 }
+
